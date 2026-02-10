@@ -8,6 +8,10 @@ node_modules/
 # Bun
 bun.lockb
 
+# Personal config (keep examples, ignore actual)
+config/profile.md
+config/schedule.json
+
 # Runtime files
 *.lock
 *.log
