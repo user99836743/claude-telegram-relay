@@ -124,7 +124,7 @@ function setupEnv(): boolean {
 // --- Main ---
 
 async function main() {
-  const platform = { darwin: "macOS", win32: "Windows", linux: "Linux" }[process.platform] || process.platform;
+  const platform = ({ darwin: "macOS", win32: "Windows", linux: "Linux" } as Record<string, string>)[process.platform] || process.platform;
 
   console.log("");
   console.log(bold("  Claude Telegram Relay — Setup"));
