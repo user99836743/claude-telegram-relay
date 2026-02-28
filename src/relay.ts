@@ -198,7 +198,7 @@ async function callClaude(
   args.push("--output-format", "json");
 
   // Pre-approve specific tools without blanket permission bypass
-  args.push("--allowedTools", "Bash Edit Write Read Glob Grep");
+  args.push("--allowedTools", "Bash Edit Write Read Glob Grep WebFetch WebSearch");
 
   console.log(`Calling Claude: ${prompt.substring(0, 50)}...`);
 
@@ -465,7 +465,7 @@ function buildPrompt(
 
   parts.push(
     "\nTOOL CAPABILITIES:" +
-      "\nYou have access to these tools: Bash, Edit, Write, Read, Glob, Grep." +
+      "\nYou have access to these tools: Bash, Edit, Write, Read, Glob, Grep, WebFetch, WebSearch." +
       "\nUse them freely when the user asks to create documents, edit files, " +
       "search for content, or run shell commands." +
       "\nWorking directory is the user's home folder (~/)." +
