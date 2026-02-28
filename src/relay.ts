@@ -194,7 +194,8 @@ async function callClaude(
     args.push("--resume", session.sessionId);
   }
 
-  args.push("--output-format", "text");
+  // JSON output gives us the session_id alongside the response text
+  args.push("--output-format", "json");
 
   console.log(`Calling Claude: ${prompt.substring(0, 50)}...`);
 
@@ -205,7 +206,9 @@ async function callClaude(
       cwd: PROJECT_DIR || undefined,
       env: {
         ...process.env,
-        // Pass through any env vars Claude might need
+        // Unset CLAUDECODE so the child Claude process doesn't think
+        // it's nested inside another Claude Code session
+        CLAUDECODE: undefined,
       },
     });
 
@@ -219,15 +222,24 @@ async function callClaude(
       return `Error: ${stderr || "Claude exited with code " + exitCode}`;
     }
 
-    // Extract session ID from output if present (for --resume)
-    const sessionMatch = output.match(/Session ID: ([a-f0-9-]+)/i);
-    if (sessionMatch) {
-      session.sessionId = sessionMatch[1];
-      session.lastActivity = new Date().toISOString();
-      await saveSession(session);
-    }
+    // Parse JSON output to extract session_id and response text
+    try {
+      const parsed = JSON.parse(output);
 
-    return output.trim();
+      // Capture session ID so --resume works on the next message
+      if (parsed.session_id) {
+        session.sessionId = parsed.session_id;
+        session.lastActivity = new Date().toISOString();
+        await saveSession(session);
+        console.log(`Session ID captured: ${parsed.session_id}`);
+      }
+
+      return (parsed.result ?? "").trim();
+    } catch {
+      // Fallback: return raw output if JSON parsing fails
+      console.warn("Could not parse Claude JSON output, returning raw text");
+      return output.trim();
+    }
   } catch (error) {
     console.error("Spawn error:", error);
     return `Error: Could not run Claude CLI`;
