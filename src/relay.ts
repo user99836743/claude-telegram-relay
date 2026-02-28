@@ -197,13 +197,16 @@ async function callClaude(
   // JSON output gives us the session_id alongside the response text
   args.push("--output-format", "json");
 
+  // Pre-approve specific tools without blanket permission bypass
+  args.push("--allowedTools", "Bash Edit Write Read Glob Grep");
+
   console.log(`Calling Claude: ${prompt.substring(0, 50)}...`);
 
   try {
     const proc = spawn(args, {
       stdout: "pipe",
       stderr: "pipe",
-      cwd: PROJECT_DIR || undefined,
+      cwd: process.env.HOME || "/home/marc",
       env: {
         ...process.env,
         // Unset CLAUDECODE so the child Claude process doesn't think
@@ -219,6 +222,15 @@ async function callClaude(
 
     if (exitCode !== 0) {
       console.error("Claude error:", stderr);
+
+      // Stale session ID — clear it and retry without --resume
+      if (stderr.includes("No conversation found") && session.sessionId) {
+        console.log("Stale session ID, clearing and retrying...");
+        session.sessionId = null;
+        await saveSession(session);
+        return callClaude(prompt, { ...options, resume: false });
+      }
+
       return `Error: ${stderr || "Claude exited with code " + exitCode}`;
     }
 
@@ -449,6 +461,21 @@ function buildPrompt(
       "\n[REMEMBER: fact to store]" +
       "\n[GOAL: goal text | DEADLINE: optional date]" +
       "\n[DONE: search text for completed goal]"
+  );
+
+  parts.push(
+    "\nTOOL CAPABILITIES:" +
+      "\nYou have access to these tools: Bash, Edit, Write, Read, Glob, Grep." +
+      "\nUse them freely when the user asks to create documents, edit files, " +
+      "search for content, or run shell commands." +
+      "\nWorking directory is the user's home folder (~/)." +
+      "\nSAFETY RULES:" +
+      "\n- For destructive Bash operations (rm, rmdir, force-overwrite with >, " +
+      "mv over existing files, chmod -R, kill, etc.), describe what you plan to do " +
+      "and ask the user to confirm before executing." +
+      "\n- For Write and Edit operations, proceed without asking — creating and " +
+      "editing files is always safe to do directly." +
+      "\n- Never use --dangerously-skip-permissions or bypass security flags."
   );
 
   parts.push(`\nUser: ${userMessage}`);
