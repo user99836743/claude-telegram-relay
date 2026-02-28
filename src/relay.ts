@@ -28,6 +28,7 @@ const PROJECT_ROOT = dirname(dirname(import.meta.path));
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const ALLOWED_USER_ID = process.env.TELEGRAM_USER_ID || "";
 const CLAUDE_PATH = process.env.CLAUDE_PATH || "claude";
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "";
 const PROJECT_DIR = process.env.PROJECT_DIR || "";
 const RELAY_DIR = process.env.RELAY_DIR || join(process.env.HOME || "~", ".claude-relay");
 
@@ -189,6 +190,11 @@ async function callClaude(
 ): Promise<string> {
   const args = [CLAUDE_PATH, "-p", prompt];
 
+  // Use configured model if set
+  if (CLAUDE_MODEL) {
+    args.push("--model", CLAUDE_MODEL);
+  }
+
   // Resume previous session if available and requested
   if (options?.resume && session.sessionId) {
     args.push("--resume", session.sessionId);
@@ -215,10 +221,27 @@ async function callClaude(
       },
     });
 
-    const output = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
+    const TIMEOUT_MS = 120_000; // 2 minutes
 
-    const exitCode = await proc.exited;
+    let output: string, stderr: string, exitCode: number;
+    try {
+      [output, stderr, exitCode] = await Promise.race([
+        Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => {
+            proc.kill();
+            reject(new Error("Claude timed out after 2 minutes"));
+          }, TIMEOUT_MS)
+        ),
+      ]);
+    } catch (timeoutErr) {
+      console.error("Claude timed out, killing process");
+      return "Sorry, that took too long — Claude timed out. Please try again.";
+    }
 
     if (exitCode !== 0) {
       console.error("Claude error:", stderr);
@@ -525,8 +548,29 @@ console.log("Starting Claude Telegram Relay...");
 console.log(`Authorized user: ${ALLOWED_USER_ID || "ANY (not recommended)"}`);
 console.log(`Project directory: ${PROJECT_DIR || "(relay working directory)"}`);
 
-bot.start({
-  onStart: () => {
-    console.log("Bot is running!");
-  },
-});
+// Retry loop: handles 409 conflicts when restarting (Telegram holds the
+// previous long-poll connection open for up to 30s after a crash)
+async function startBot() {
+  while (true) {
+    try {
+      await bot.start({
+        onStart: () => {
+          console.log("Bot is running!");
+        },
+      });
+      break; // graceful stop
+    } catch (error: unknown) {
+      const is409 =
+        error instanceof Error &&
+        error.message.includes("409");
+      if (is409) {
+        console.log("409 conflict — waiting 35s for Telegram to release previous connection...");
+        await new Promise((r) => setTimeout(r, 35_000));
+      } else {
+        throw error;
+      }
+    }
+  }
+}
+
+startBot();
