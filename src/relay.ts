@@ -48,10 +48,18 @@ interface SessionState {
 // SESSION MANAGEMENT
 // ============================================================
 
+const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours
+
 async function loadSession(): Promise<SessionState> {
   try {
     const content = await readFile(SESSION_FILE, "utf-8");
-    return JSON.parse(content);
+    const state: SessionState = JSON.parse(content);
+    const age = Date.now() - new Date(state.lastActivity).getTime();
+    if (age > SESSION_MAX_AGE_MS) {
+      console.log(`Session expired (${(age / 3600000).toFixed(1)}h old), starting fresh`);
+      return { sessionId: null, lastActivity: new Date().toISOString() };
+    }
+    return state;
   } catch {
     return { sessionId: null, lastActivity: new Date().toISOString() };
   }
@@ -206,7 +214,8 @@ async function callClaude(
   // Pre-approve specific tools without blanket permission bypass
   args.push("--allowedTools", "Bash Edit Write Read Glob Grep WebFetch WebSearch");
 
-  console.log(`Calling Claude: ${prompt.substring(0, 50)}...`);
+  const callStart = Date.now();
+  console.log(`[${new Date().toISOString()}] Calling Claude: ${prompt.substring(0, 50)}...`);
 
   try {
     const proc = spawn(args, {
@@ -239,7 +248,9 @@ async function callClaude(
         ),
       ]);
     } catch (timeoutErr) {
-      console.error("Claude timed out, killing process");
+      const elapsed = ((Date.now() - callStart) / 1000).toFixed(1);
+      const sessionInfo = session.sessionId ? `session=${session.sessionId.substring(0, 8)}` : "no-session";
+      console.error(`[${new Date().toISOString()}] Claude timed out after ${elapsed}s (${sessionInfo}, resume=${!!options?.resume}, prompt_len=${prompt.length})`);
       return "Sorry, that took too long — Claude timed out. Please try again.";
     }
 
