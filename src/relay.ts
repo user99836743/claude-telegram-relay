@@ -230,7 +230,9 @@ async function callClaude(
       },
     });
 
-    const TIMEOUT_MS = 120_000; // 2 minutes
+    const isLongJob = prompt.includes("[File:") || prompt.length > 5000;
+    const TIMEOUT_MS = isLongJob ? 1_200_000 : 120_000; // 20 min for long jobs, 2 min otherwise
+    console.log(`Timeout: ${TIMEOUT_MS / 60000}min (longJob=${isLongJob}, prompt_len=${prompt.length})`);
 
     let output: string, stderr: string, exitCode: number;
     try {
@@ -243,14 +245,14 @@ async function callClaude(
         new Promise<never>((_, reject) =>
           setTimeout(() => {
             proc.kill();
-            reject(new Error("Claude timed out after 2 minutes"));
+            reject(new Error(`Claude timed out after ${TIMEOUT_MS / 60000} minutes`));
           }, TIMEOUT_MS)
         ),
       ]);
     } catch (timeoutErr) {
       const elapsed = ((Date.now() - callStart) / 1000).toFixed(1);
       const sessionInfo = session.sessionId ? `session=${session.sessionId.substring(0, 8)}` : "no-session";
-      console.error(`[${new Date().toISOString()}] Claude timed out after ${elapsed}s (${sessionInfo}, resume=${!!options?.resume}, prompt_len=${prompt.length})`);
+      console.error(`[${new Date().toISOString()}] Claude timed out after ${elapsed}s (${sessionInfo}, resume=${!!options?.resume}, prompt_len=${prompt.length}, limit=${TIMEOUT_MS / 60000}min)`);
       return "Sorry, that took too long — Claude timed out. Please try again.";
     }
 
