@@ -257,17 +257,24 @@ async function callClaude(
     }
 
     if (exitCode !== 0) {
-      console.error("Claude error:", stderr);
+      console.error(`[${new Date().toISOString()}] Claude error (exit ${exitCode}): stderr="${stderr}" stdout="${output.substring(0, 200)}"`);
 
-      // Stale session ID — clear it and retry without --resume
-      if (stderr.includes("No conversation found") && session.sessionId) {
-        console.log("Stale session ID, clearing and retrying...");
-        session.sessionId = null;
-        await saveSession(session);
-        return callClaude(prompt, { ...options, resume: false });
+      // Stale/oversized session — clear it and retry without --resume
+      // Handles both explicit "No conversation found" and silent exits (empty stderr)
+      // that happen when a session's context window becomes too large.
+      if (session.sessionId && options?.resume) {
+        const isStaleSession =
+          stderr.includes("No conversation found") ||
+          (!stderr && exitCode === 1);
+        if (isStaleSession) {
+          console.log("Stale or oversized session, clearing and retrying without --resume...");
+          session.sessionId = null;
+          await saveSession(session);
+          return callClaude(prompt, { ...options, resume: false });
+        }
       }
 
-      return `Error: ${stderr || "Claude exited with code " + exitCode}`;
+      return `Error: ${stderr || output || "Claude exited with code " + exitCode}`;
     }
 
     // Parse JSON output to extract session_id and response text
